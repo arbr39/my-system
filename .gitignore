@@ -1,0 +1,46 @@
+# Claude Code local memories (not shared)
+CLAUDE.local.md
+.claude/CLAUDE.local.md
+
+# System files
+.DS_Store
+*.swp
+*.swo
+*~
+
+# Environment
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+*.code-workspace
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.coverage
+
+# Node
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Logs
+*.log
+logs/
+
+# Temporary
+tmp/
+temp/
