@@ -58,7 +58,8 @@ git add -A
 git commit -m "feat: добавил X потому что Y"
 git push
 
-# Автодеплой через GitHub Actions на сервер 64.137.9.146
+# Автодеплой через GitHub Actions на production сервер
+# См. .claude/rules/deployment.md для SSH credentials
 ```
 
 ### Документация
@@ -75,6 +76,7 @@ git push
 - **@.claude/rules/reward-system.md** — принципы системы наград (@whysasha)
 - **@.claude/rules/python-style.md** — Python code style (type hints, async, sessions)
 - **@.claude/rules/git-workflow.md** — git commit format, deployment
+- **@.claude/rules/deployment.md** — ⚠️ sensitive: SSH server, credentials (в .gitignore)
 
 См. `/memory` для просмотра всех загруженных правил.
 

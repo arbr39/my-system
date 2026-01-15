@@ -1,6 +1,7 @@
 # Claude Code local memories (not shared)
 CLAUDE.local.md
 .claude/CLAUDE.local.md
+.claude/rules/deployment.md
 
 # System files
 .DS_Store
@@ -11,6 +12,11 @@ CLAUDE.local.md
 # Environment
 .env
 .env.local
+*.env
+
+# Virtual environments
+venv/
+ENV/
 
 # IDE
 .vscode/
@@ -44,3 +50,16 @@ logs/
 # Temporary
 tmp/
 temp/
+
+# Database
+*.db
+
+# OS
+Thumbs.db
+
+# kaizen-bot specific
+kaizen-bot/data/
+
+# My files
+arhip.rst
+my_standart.rst

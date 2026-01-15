@@ -38,13 +38,13 @@ git commit -m "fix bug"  # Какой bug?
 
 ### Auto-deploy
 ```bash
-git push  # → GitHub Actions → сервер 64.137.9.146
+git push  # → GitHub Actions → production server (см. deployment.md)
 ```
 
 ### Проверка деплоя
 ```bash
 gh run list --limit 3
-ssh root@64.137.9.146 "cd /root/kaizen-bot && git log -1 --oneline"
+ssh root@$SERVER_IP "cd /root/my-system && git log -1 --oneline"  # SERVER_IP в deployment.md
 ```
 
 ---
