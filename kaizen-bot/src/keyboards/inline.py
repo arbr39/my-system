@@ -24,6 +24,9 @@ def get_main_menu() -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="💰 Награды", callback_data="rewards_show")
     )
     builder.row(
+        InlineKeyboardButton(text="✅ Мои задачи", callback_data="tasks_show")
+    )
+    builder.row(
         InlineKeyboardButton(text="📊 Принципы", callback_data="principles_show"),
         InlineKeyboardButton(text="📅 Даты", callback_data="dates_show")
     )

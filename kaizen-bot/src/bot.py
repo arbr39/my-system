@@ -7,7 +7,7 @@ from src.config import BOT_TOKEN
 from src.database.models import init_db
 from src.handlers import start, morning, evening, stats, goals, settings, report, habits
 from src.handlers import review, someday, inbox, calendar, rewards
-from src.handlers import principles, dates
+from src.handlers import principles, dates, user_tasks
 from src.scheduler.jobs import set_bot, setup_scheduler, start_scheduler
 
 # Настройка логирования
@@ -48,6 +48,7 @@ async def main():
     # Новые роутеры: принципы и даты
     dp.include_router(principles.router)  # Ежемесячная оценка принципов
     dp.include_router(dates.router)  # Важные даты и напоминания
+    dp.include_router(user_tasks.router)  # Пользовательские задачи с наградами
 
     dp.include_router(inbox.router)  # ВАЖНО: Последним! Перехватывает любой текст
 

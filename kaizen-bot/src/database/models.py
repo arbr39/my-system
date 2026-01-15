@@ -36,6 +36,7 @@ class User(Base):
     reward_fund = relationship("RewardFund", back_populates="user", uselist=False)
     monthly_assessments = relationship("MonthlyAssessment", back_populates="user")
     important_dates = relationship("ImportantDate", back_populates="user")
+    user_tasks = relationship("UserTask", back_populates="user")
 
 
 class DailyEntry(Base):
@@ -376,6 +377,54 @@ class DateReminder(Base):
 
     # Отношения
     important_date = relationship("ImportantDate", back_populates="reminders")
+
+
+# ============ ПОЛЬЗОВАТЕЛЬСКИЕ ЗАДАЧИ С НАГРАДАМИ ============
+
+class UserTask(Base):
+    """Пользовательские задачи с наградами (@whysasha методика)"""
+    __tablename__ = "user_tasks"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+
+    # Основная информация
+    name = Column(String(200), nullable=False)
+    reward_amount = Column(Integer, nullable=False)  # Сумма награды в рублях
+
+    # Тип задачи
+    is_recurring = Column(Boolean, default=True)  # True = повторяющаяся, False = одноразовая
+
+    # Категория (опционально)
+    category = Column(String(50))  # sport, learning, personal, work, etc.
+
+    # Статус
+    is_active = Column(Boolean, default=True)  # False для архивных или удалённых
+    completed_once = Column(Boolean, default=False)  # Для одноразовых задач
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Отношения
+    user = relationship("User")
+    completions = relationship("UserTaskCompletion", back_populates="task")
+
+
+class UserTaskCompletion(Base):
+    """История выполнений пользовательских задач"""
+    __tablename__ = "user_task_completions"
+
+    id = Column(Integer, primary_key=True)
+    task_id = Column(Integer, ForeignKey("user_tasks.id"), nullable=False)
+
+    # Дата выполнения
+    completed_at = Column(DateTime, default=datetime.utcnow)
+    completion_date = Column(Date, default=date.today)  # Для подсчёта выполнений за день
+
+    # Награда
+    reward_transaction_id = Column(Integer, ForeignKey("reward_transactions.id"))
+
+    # Отношения
+    task = relationship("UserTask", back_populates="completions")
 
 
 # Создание движка и сессии
