@@ -136,7 +136,8 @@ async def set_habit_time(callback: CallbackQuery):
     """Установить время для привычки и создать событие"""
     parts = callback.data.split(":")
     habit_type = parts[1]
-    time_str = parts[2]
+    # time_str = parts[2]:parts[3] (например "18:00")
+    time_str = f"{parts[2]}:{parts[3]}"
 
     user = get_user_by_telegram_id(callback.from_user.id)
     if not user:
