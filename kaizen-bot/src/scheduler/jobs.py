@@ -186,6 +186,29 @@ async def send_monthly_assessment_reminder():
             print(f"Monthly assessment reminder error: {e}")
 
 
+async def send_quizlet_reminder():
+    """Напоминание Quizlet английский (каждый день в 21:30)"""
+    if not bot:
+        return
+
+    from src.handlers.quizlet import get_quizlet_keyboard
+
+    users = get_all_users()
+    for user in users:
+        try:
+            await bot.send_message(
+                user.telegram_id,
+                "🇬🇧 *Quizlet английский*\n\n"
+                "Пора заниматься английским!\n"
+                "Открой Quizlet и позанимайся 10-15 минут.\n\n"
+                "💰 Награда: *60₽*",
+                parse_mode="Markdown",
+                reply_markup=get_quizlet_keyboard()
+            )
+        except Exception as e:
+            print(f"Quizlet reminder error: {e}")
+
+
 def setup_scheduler():
     """Настройка планировщика"""
     # Утреннее напоминание
@@ -244,6 +267,14 @@ def setup_scheduler():
         replace_existing=True
     )
 
+    # Quizlet английский (каждый день в 21:30)
+    scheduler.add_job(
+        send_quizlet_reminder,
+        CronTrigger(hour=21, minute=30, timezone=TIMEZONE),
+        id="quizlet_reminder",
+        replace_existing=True
+    )
+
     return scheduler
 
 
@@ -268,6 +299,7 @@ def start_scheduler():
         print("Calendar sync: every 30 minutes")
         print("Birthday reminders: daily 09:00")
         print("Monthly assessment: 1st day of month 10:00")
+        print("Quizlet reminder: daily 21:30")
 
 
 def stop_scheduler():
