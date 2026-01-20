@@ -39,6 +39,16 @@ def get_calendar_keyboard(is_connected: bool) -> InlineKeyboardMarkup:
             text="🔄 Синхронизировать",
             callback_data="calendar_sync_now"
         ))
+        builder.row(
+            InlineKeyboardButton(
+                text="🔔 Напоминания",
+                callback_data="calendar_reminder_settings"
+            ),
+            InlineKeyboardButton(
+                text="🏃 Привычки",
+                callback_data="habit_calendar_setup"
+            )
+        )
         builder.row(InlineKeyboardButton(
             text="❌ Отключить",
             callback_data="calendar_disconnect"
@@ -110,8 +120,9 @@ async def cmd_calendar(message: Message):
 
 
 @router.callback_query(F.data == "calendar_show")
+@router.callback_query(F.data == "calendar_menu")
 async def show_calendar_settings(callback: CallbackQuery):
-    """Показать настройки календаря (из главного меню)"""
+    """Показать настройки календаря (из главного меню или при возврате)"""
     if not is_calendar_configured():
         await callback.answer("Интеграция не настроена", show_alert=True)
         return

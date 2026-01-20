@@ -118,6 +118,12 @@ def get_task_view_keyboard(task_id: int, already_completed_today: bool, is_recur
             callback_data=f"task_complete:{task_id}"
         ))
 
+    # Добавить в календарь
+    builder.row(InlineKeyboardButton(
+        text="📅 В календарь",
+        callback_data=f"task_to_calendar:{task_id}"
+    ))
+
     # Управление
     builder.row(
         InlineKeyboardButton(

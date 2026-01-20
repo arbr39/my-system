@@ -20,6 +20,10 @@ def set_bot(bot_instance):
     global bot
     bot = bot_instance
 
+    # Также устанавливаем bot в calendar_reminders
+    from src.scheduler.calendar_reminders import set_bot as set_calendar_bot
+    set_calendar_bot(bot_instance)
+
 
 async def send_morning_reminder():
     """Утреннее напоминание"""
@@ -275,6 +279,34 @@ def setup_scheduler():
         replace_existing=True
     )
 
+    # === Умные напоминания о событиях календаря ===
+
+    # Напоминания о предстоящих событиях (каждые 5 минут)
+    from src.scheduler.calendar_reminders import check_upcoming_events, check_ended_events
+    scheduler.add_job(
+        check_upcoming_events,
+        CronTrigger(minute="*/5", timezone=TIMEZONE),
+        id="calendar_event_reminders",
+        replace_existing=True
+    )
+
+    # Follow-up после завершения событий (каждые 5 минут)
+    scheduler.add_job(
+        check_ended_events,
+        CronTrigger(minute="*/5", timezone=TIMEZONE),
+        id="calendar_event_followups",
+        replace_existing=True
+    )
+
+    # Синхронизация выполнения привычек с календарём (ежедневно в 22:30)
+    from src.scheduler.habit_sync import sync_habit_completions
+    scheduler.add_job(
+        sync_habit_completions,
+        CronTrigger(hour=22, minute=30, timezone=TIMEZONE),
+        id="habit_calendar_sync",
+        replace_existing=True
+    )
+
     return scheduler
 
 
@@ -300,6 +332,9 @@ def start_scheduler():
         print("Birthday reminders: daily 09:00")
         print("Monthly assessment: 1st day of month 10:00")
         print("Quizlet reminder: daily 21:30")
+        print("Calendar event reminders: every 5 minutes")
+        print("Calendar event followups: every 5 minutes")
+        print("Habit calendar sync: daily 22:30")
 
 
 def stop_scheduler():

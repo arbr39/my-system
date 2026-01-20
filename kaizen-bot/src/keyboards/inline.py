@@ -150,6 +150,7 @@ def get_inbox_item_keyboard(item_id: int) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="✅ Выполнено", callback_data=f"inbox_quick_done:{item_id}"))
     builder.row(InlineKeyboardButton(text="⚡ Обработать", callback_data=f"inbox_process:{item_id}"))
+    builder.row(InlineKeyboardButton(text="📅 В календарь", callback_data=f"inbox_to_calendar:{item_id}"))
     builder.row(
         InlineKeyboardButton(text="📦 Когда-нибудь", callback_data=f"inbox_someday:{item_id}"),
         InlineKeyboardButton(text="🗑 Удалить", callback_data=f"inbox_delete:{item_id}")

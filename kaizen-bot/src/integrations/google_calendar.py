@@ -273,3 +273,171 @@ class GoogleCalendarService:
             ).execute()
         except HttpError:
             return None
+
+    # === Методы для умных напоминаний и follow-up ===
+
+    def get_upcoming_events(
+        self,
+        minutes_ahead: int = 30,
+        calendar_id: str = "primary"
+    ) -> list:
+        """
+        Получить события, начинающиеся в ближайшие N минут.
+        Используется для умных напоминаний.
+        """
+        if not self.service:
+            return []
+
+        try:
+            now = datetime.now()
+            time_max = now + timedelta(minutes=minutes_ahead)
+
+            events_result = self.service.events().list(
+                calendarId=calendar_id,
+                timeMin=now.isoformat() + 'Z',
+                timeMax=time_max.isoformat() + 'Z',
+                maxResults=20,
+                singleEvents=True,
+                orderBy='startTime'
+            ).execute()
+            return events_result.get('items', [])
+        except HttpError as e:
+            print(f"Error getting upcoming events: {e}")
+            return []
+
+    def get_recently_ended_events(
+        self,
+        minutes_past: int = 10,
+        calendar_id: str = "primary"
+    ) -> list:
+        """
+        Получить события, завершившиеся за последние N минут.
+        Используется для follow-up триггеров.
+        """
+        if not self.service:
+            return []
+
+        try:
+            now = datetime.now()
+            time_min = now - timedelta(minutes=minutes_past)
+
+            events_result = self.service.events().list(
+                calendarId=calendar_id,
+                timeMin=time_min.isoformat() + 'Z',
+                timeMax=now.isoformat() + 'Z',
+                maxResults=20,
+                singleEvents=True,
+                orderBy='startTime'
+            ).execute()
+
+            # Фильтруем только завершившиеся (end < now)
+            ended_events = []
+            for event in events_result.get('items', []):
+                end_str = event.get('end', {}).get('dateTime')
+                if end_str:
+                    # Парсим время окончания
+                    end_time = datetime.fromisoformat(end_str.replace('Z', '+00:00'))
+                    if end_time.replace(tzinfo=None) <= now:
+                        ended_events.append(event)
+            return ended_events
+        except HttpError as e:
+            print(f"Error getting recently ended events: {e}")
+            return []
+
+    def update_event_color(
+        self,
+        event_id: str,
+        color_id: str,
+        calendar_id: str = "primary"
+    ) -> bool:
+        """
+        Обновить цвет события.
+        Цвета: "10" = зелёный (выполнено), "11" = красный, "9" = синий
+        """
+        if not self.service:
+            return False
+
+        try:
+            event = self.service.events().get(
+                calendarId=calendar_id,
+                eventId=event_id
+            ).execute()
+
+            event['colorId'] = color_id
+
+            self.service.events().update(
+                calendarId=calendar_id,
+                eventId=event_id,
+                body=event
+            ).execute()
+            return True
+        except HttpError as e:
+            print(f"Error updating event color: {e}")
+            return False
+
+    def create_recurring_event(
+        self,
+        summary: str,
+        start_time: str,
+        duration_minutes: int = 60,
+        recurrence_rule: str = "RRULE:FREQ=DAILY",
+        description: str = None,
+        calendar_id: str = "primary"
+    ) -> str | None:
+        """
+        Создать повторяющееся событие для привычек.
+
+        Args:
+            summary: Название события (например, "🏃 Спорт")
+            start_time: Время начала в формате "HH:MM" (например, "18:00")
+            duration_minutes: Длительность в минутах
+            recurrence_rule: Правило повторения (по умолчанию ежедневно)
+            description: Описание события
+
+        Returns:
+            event_id или None при ошибке
+        """
+        if not self.service:
+            return None
+
+        try:
+            # Парсим время начала
+            hour, minute = map(int, start_time.split(':'))
+            now = datetime.now()
+            start_dt = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+
+            # Если время уже прошло сегодня, начинаем с завтра
+            if start_dt <= now:
+                start_dt += timedelta(days=1)
+
+            end_dt = start_dt + timedelta(minutes=duration_minutes)
+
+            event = {
+                'summary': summary,
+                'description': description or "Привычка из Kaizen Bot",
+                'start': {
+                    'dateTime': start_dt.isoformat(),
+                    'timeZone': TIMEZONE,
+                },
+                'end': {
+                    'dateTime': end_dt.isoformat(),
+                    'timeZone': TIMEZONE,
+                },
+                'recurrence': [recurrence_rule],
+                'colorId': "8",  # Серый по умолчанию (не выполнено)
+                'reminders': {
+                    'useDefault': False,
+                    'overrides': [
+                        {'method': 'popup', 'minutes': 30},
+                    ],
+                },
+            }
+
+            result = self.service.events().insert(
+                calendarId=calendar_id,
+                body=event
+            ).execute()
+            return result['id']
+        except HttpError as e:
+            print(f"Error creating recurring event: {e}")
+            return None

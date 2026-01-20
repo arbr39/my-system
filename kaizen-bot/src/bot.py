@@ -8,6 +8,7 @@ from src.database.models import init_db
 from src.handlers import start, morning, evening, stats, goals, settings, report, habits
 from src.handlers import review, someday, inbox, calendar, rewards
 from src.handlers import principles, dates, user_tasks, quizlet
+from src.handlers import calendar_reminders, habits_calendar, calendar_actions
 from src.scheduler.jobs import set_bot, setup_scheduler, start_scheduler
 
 # Настройка логирования
@@ -50,6 +51,11 @@ async def main():
     dp.include_router(dates.router)  # Важные даты и напоминания
     dp.include_router(user_tasks.router)  # Пользовательские задачи с наградами
     dp.include_router(quizlet.router)  # Quizlet английский (scheduled reminder)
+
+    # Calendar расширения
+    dp.include_router(calendar_reminders.router)  # Умные напоминания и follow-up
+    dp.include_router(habits_calendar.router)  # Привычки в календаре
+    dp.include_router(calendar_actions.router)  # Quick action "В календарь"
 
     dp.include_router(inbox.router)  # ВАЖНО: Последним! Перехватывает любой текст
 

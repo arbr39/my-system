@@ -27,6 +27,12 @@ class User(Base):
     calendar_sync_enabled = Column(Boolean, default=False)
     calendar_last_sync = Column(DateTime)  # Время последней синхронизации
 
+    # Настройки напоминаний о событиях календаря
+    reminder_minutes_before = Column(Integer, default=15)  # За сколько минут напоминать (15/30/60)
+    quiet_hours_start = Column(Integer, default=23)  # Начало тихих часов (0-23)
+    quiet_hours_end = Column(Integer, default=7)  # Конец тихих часов (0-23)
+    event_reminders_enabled = Column(Boolean, default=True)  # Напоминания о событиях включены
+
     # Отношения
     daily_entries = relationship("DailyEntry", back_populates="user")
     goals = relationship("Goal", back_populates="user")
@@ -403,6 +409,10 @@ class UserTask(Base):
     is_active = Column(Boolean, default=True)  # False для архивных или удалённых
     completed_once = Column(Boolean, default=False)  # Для одноразовых задач
 
+    # Google Calendar интеграция
+    google_event_id = Column(String(255))  # ID события в Google Calendar
+    calendar_time = Column(DateTime)  # Время события в календаре
+
     created_at = Column(DateTime, default=datetime.utcnow)
 
     # Отношения
@@ -426,6 +436,59 @@ class UserTaskCompletion(Base):
 
     # Отношения
     task = relationship("UserTask", back_populates="completions")
+
+
+# ============ УМНЫЕ НАПОМИНАНИЯ И FOLLOW-UP ============
+
+class CalendarEventReminder(Base):
+    """Отслеживание напоминаний о событиях и follow-up"""
+    __tablename__ = "calendar_event_reminders"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+
+    # Идентификация события
+    google_event_id = Column(String(255), nullable=False)
+    event_start = Column(DateTime, nullable=False)
+    event_end = Column(DateTime)
+    event_summary = Column(String(500))
+
+    # Отслеживание напоминаний
+    reminder_sent_at = Column(DateTime)  # Когда отправлено напоминание
+    followup_sent_at = Column(DateTime)  # Когда отправлен follow-up
+    followup_response = Column(Text)  # Action items от пользователя
+
+    # Флаги исключений
+    is_bot_created = Column(Boolean, default=False)  # Создано Kaizen Bot
+    is_excluded = Column(Boolean, default=False)  # "focus", "обед" и т.д.
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User")
+
+
+class HabitCalendarEvent(Base):
+    """Привычки в Google Calendar"""
+    __tablename__ = "habit_calendar_events"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+
+    # Тип привычки
+    habit_type = Column(String(30), nullable=False)  # "exercise", "eating"
+
+    # Google Calendar событие
+    google_event_id = Column(String(255))  # ID recurring события
+    event_time = Column(String(10))  # "18:00" - время привычки
+
+    # Статус
+    is_active = Column(Boolean, default=True)
+    last_completed_date = Column(Date)  # Последняя дата выполнения
+    last_synced_at = Column(DateTime)  # Последняя синхронизация цвета
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User")
 
 
 # Создание движка и сессии
