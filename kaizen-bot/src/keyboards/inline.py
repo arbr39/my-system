@@ -342,3 +342,15 @@ def get_review_skip_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="⏭️ Пропустить", callback_data="review_skip"))
     return builder.as_markup()
+
+
+# ============ MORNING SPORT PLANNING ============
+
+def get_sport_question_keyboard() -> InlineKeyboardMarkup:
+    """Спорт сегодня? Да/Нет"""
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="✅ Да", callback_data="morning_sport_yes"),
+        InlineKeyboardButton(text="❌ Не сегодня", callback_data="morning_sport_no")
+    )
+    return builder.as_markup()

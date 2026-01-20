@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta
+
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
@@ -7,7 +9,8 @@ from src.database.crud import (
     get_user_by_telegram_id, update_morning_entry, get_or_create_today_entry,
     get_user_goals, update_habits, update_priority_task
 )
-from src.keyboards.inline import get_skip_keyboard, get_main_menu, get_priority_keyboard
+from src.keyboards.inline import get_skip_keyboard, get_main_menu, get_priority_keyboard, get_sport_question_keyboard
+from src.keyboards.inline_calendar import get_morning_sport_time_keyboard
 
 router = Router()
 
@@ -21,6 +24,8 @@ class MorningStates(StatesGroup):
     task_2 = State()
     task_3 = State()
     priority_task = State()  # Выбор главной задачи (GTD)
+    sport_question = State()  # Спорт сегодня?
+    sport_time = State()      # Выбор времени спорта
 
 
 @router.callback_query(F.data == "morning_start")
@@ -163,11 +168,26 @@ async def process_task_3(message: Message, state: FSMContext):
 
 @router.callback_query(F.data.startswith("priority:"), MorningStates.priority_task)
 async def process_priority(callback: CallbackQuery, state: FSMContext):
-    """Выбор приоритетной задачи"""
+    """Выбор приоритетной задачи → вопрос про спорт"""
     priority = int(callback.data.split(":")[1])
     await state.update_data(priority_task=priority)
-    await callback.message.edit_text("⏳ Сохраняю...")
-    await finish_morning(callback.message, state)
+
+    # Проверяем, подключён ли Google Calendar
+    user = get_user_by_telegram_id(callback.from_user.id)
+    if user and user.google_refresh_token_encrypted:
+        # Спрашиваем про спорт
+        await callback.message.edit_text(
+            "🏃 *Спорт сегодня?*\n\n"
+            "Добавим тренировку в календарь?",
+            parse_mode="Markdown",
+            reply_markup=get_sport_question_keyboard()
+        )
+        await state.set_state(MorningStates.sport_question)
+    else:
+        # Календарь не подключён — завершаем
+        await callback.message.edit_text("⏳ Сохраняю...")
+        await finish_morning(callback.message, state)
+
     await callback.answer()
 
 
@@ -223,9 +243,15 @@ async def finish_morning(message: Message, state: FSMContext):
         summary += f"\n\n💰 *+{reward_amount}₽* за утренний кайдзен!"
         summary += f"\n📊 Баланс: {balance}₽"
 
+    # Информация о спорте
+    if data.get("sport_added"):
+        sport_hour = data.get("sport_hour", 18)
+        sport_minute = data.get("sport_minute", 0)
+        summary += f"\n\n🏃 *Спорт в {sport_hour:02d}:{sport_minute:02d}* добавлен в календарь!"
+
     summary += "\n\n🌙 Вечером я напомню подвести итоги!"
 
-    # Синхронизация с Google Calendar
+    # Синхронизация с Google Calendar (задачи)
     try:
         user = get_user_by_telegram_id(message.chat.id)
         if user and user.calendar_sync_enabled:
@@ -331,3 +357,143 @@ async def skip_task_3(callback: CallbackQuery, state: FSMContext):
         await callback.message.edit_text("⏳ Сохраняю...")
         await finish_morning(callback.message, state)
     await callback.answer()
+
+
+# ============ SPORT PLANNING ============
+
+@router.callback_query(F.data == "morning_sport_yes", MorningStates.sport_question)
+async def sport_yes(callback: CallbackQuery, state: FSMContext):
+    """Пользователь идёт на спорт — выбор времени"""
+    await callback.message.edit_text(
+        "🏃 *Во сколько тренировка?*\n\n"
+        "Выбери время или введи своё:",
+        parse_mode="Markdown",
+        reply_markup=get_morning_sport_time_keyboard()
+    )
+    await state.set_state(MorningStates.sport_time)
+    await callback.answer()
+
+
+@router.callback_query(F.data == "morning_sport_no", MorningStates.sport_question)
+async def sport_no_from_question(callback: CallbackQuery, state: FSMContext):
+    """Не идёт на спорт (из вопроса)"""
+    await callback.message.edit_text("⏳ Сохраняю...")
+    await finish_morning(callback.message, state)
+    await callback.answer()
+
+
+@router.callback_query(F.data == "morning_sport_no", MorningStates.sport_time)
+async def sport_no_from_time(callback: CallbackQuery, state: FSMContext):
+    """Не идёт на спорт (из выбора времени)"""
+    await callback.message.edit_text("⏳ Сохраняю...")
+    await finish_morning(callback.message, state)
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("morning_sport_time:"), MorningStates.sport_time)
+async def sport_time_selected(callback: CallbackQuery, state: FSMContext):
+    """Выбрано время спорта — создаём событие в календарь"""
+    parts = callback.data.split(":")
+    hour = int(parts[1])
+    minute = int(parts[2])
+
+    await state.update_data(sport_hour=hour, sport_minute=minute)
+    await callback.message.edit_text("⏳ Добавляю спорт в календарь...")
+
+    # Создаём событие
+    user = get_user_by_telegram_id(callback.from_user.id)
+    if user:
+        await _create_sport_event(user, hour, minute)
+        await state.update_data(sport_added=True)
+
+    await finish_morning(callback.message, state)
+    await callback.answer()
+
+
+@router.callback_query(F.data == "morning_sport_custom", MorningStates.sport_time)
+async def sport_custom_time(callback: CallbackQuery, state: FSMContext):
+    """Пользователь хочет ввести своё время"""
+    await callback.message.edit_text(
+        "⏰ *Введи время тренировки*\n\n"
+        "Формат: `ЧЧ:ММ` (например, 17:30)",
+        parse_mode="Markdown"
+    )
+    # Остаёмся в sport_time state — ждём текстовый ввод
+    await callback.answer()
+
+
+@router.message(MorningStates.sport_time)
+async def sport_custom_time_input(message: Message, state: FSMContext):
+    """Обработка введённого времени спорта"""
+    text = message.text.strip()
+
+    # Парсим время
+    try:
+        hour, minute = map(int, text.split(":"))
+        if not (0 <= hour <= 23 and 0 <= minute <= 59):
+            raise ValueError()
+    except (ValueError, AttributeError):
+        await message.answer(
+            "❌ Неверный формат времени.\n"
+            "Введи в формате `ЧЧ:ММ` (например, 17:30)",
+            parse_mode="Markdown"
+        )
+        return
+
+    await state.update_data(sport_hour=hour, sport_minute=minute)
+    await message.answer("⏳ Добавляю спорт в календарь...")
+
+    # Создаём событие
+    user = get_user_by_telegram_id(message.from_user.id)
+    if user:
+        await _create_sport_event(user, hour, minute)
+        await state.update_data(sport_added=True)
+
+    await finish_morning(message, state)
+
+
+async def _create_sport_event(user, hour: int, minute: int) -> bool:
+    """Создать событие спорта в Google Calendar на сегодня"""
+    from src.integrations.google_calendar import GoogleCalendarService
+
+    if not user.google_refresh_token_encrypted:
+        return False
+
+    calendar_service = GoogleCalendarService(user.id)
+    if not calendar_service.load_credentials(user.google_refresh_token_encrypted):
+        return False
+
+    try:
+        now = datetime.now()
+        start_dt = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        end_dt = start_dt + timedelta(hours=1)
+
+        event = {
+            'summary': '🏃 Спорт',
+            'description': 'Тренировка из утреннего кайдзена',
+            'start': {
+                'dateTime': start_dt.isoformat(),
+                'timeZone': 'Europe/Moscow',
+            },
+            'end': {
+                'dateTime': end_dt.isoformat(),
+                'timeZone': 'Europe/Moscow',
+            },
+            'colorId': '9',  # Синий
+            'reminders': {
+                'useDefault': False,
+                'overrides': [
+                    {'method': 'popup', 'minutes': 30},
+                ],
+            },
+        }
+
+        calendar_id = user.google_calendar_id or "primary"
+        result = calendar_service.service.events().insert(
+            calendarId=calendar_id,
+            body=event
+        ).execute()
+        return bool(result.get('id'))
+    except Exception as e:
+        print(f"Error creating sport event: {e}")
+        return False

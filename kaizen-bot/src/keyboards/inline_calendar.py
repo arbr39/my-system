@@ -196,3 +196,47 @@ def get_habit_time_keyboard(habit_type: str) -> InlineKeyboardMarkup:
     ))
 
     return builder.as_markup()
+
+
+def get_morning_sport_time_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура выбора времени спорта в утреннем кайдзене"""
+    builder = InlineKeyboardBuilder()
+
+    now = datetime.now()
+
+    # Quick slots — только будущие времена сегодня
+    slots = [
+        (10, "🌅 10:00"),
+        (14, "☀️ 14:00"),
+        (18, "🌆 18:00"),
+        (20, "🌙 20:00"),
+    ]
+
+    row = []
+    for hour, label in slots:
+        slot_time = now.replace(hour=hour, minute=0, second=0, microsecond=0)
+        if slot_time > now:
+            row.append(InlineKeyboardButton(
+                text=label,
+                callback_data=f"morning_sport_time:{hour}:00"
+            ))
+            if len(row) == 2:
+                builder.row(*row)
+                row = []
+
+    if row:
+        builder.row(*row)
+
+    # Ввод вручную
+    builder.row(InlineKeyboardButton(
+        text="⌨️ Другое время",
+        callback_data="morning_sport_custom"
+    ))
+
+    # Отмена (не пойду)
+    builder.row(InlineKeyboardButton(
+        text="🔙 Не сегодня",
+        callback_data="morning_sport_no"
+    ))
+
+    return builder.as_markup()
