@@ -10,7 +10,7 @@ from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
-from src.database.crud import get_user_by_telegram_id
+from src.database.crud import get_user_by_telegram_id, get_unified_tasks
 from src.database.crud_user_tasks import (
     add_user_task,
     get_user_tasks,
@@ -50,13 +50,17 @@ class UserTaskStates(StatesGroup):
 
 @router.message(Command("tasks"))
 async def cmd_tasks(message: Message):
-    """Команда /tasks — показать список задач"""
+    """Команда /tasks — показать unified список задач"""
     user = get_user_by_telegram_id(message.from_user.id)
     if not user:
         await message.answer("Сначала используй /start")
         return
 
-    tasks = get_user_tasks(user.id, active_only=True)
+    # Получить unified данные
+    unified = get_unified_tasks(user.id, filter_type="all")
+    tasks = unified["user_tasks"]
+    inbox_tasks = unified["inbox_tasks"]
+
     stats_today = get_user_stats_today(user.id)
 
     # Подсчитать выполнения за сегодня
@@ -66,23 +70,35 @@ async def cmd_tasks(message: Message):
         completions_today[task.id] = count
 
     text = "📋 *Мои задачи*\n\n"
-    if tasks:
-        text += f"Активных задач: {len(tasks)}\n\n"
-        text += "_Нажми на задачу, чтобы отметить выполнение_"
+    total_count = len(tasks) + len(inbox_tasks)
+
+    if total_count > 0:
+        text += f"Всего задач: {total_count}\n"
+        if tasks:
+            text += f"• User tasks: {len(tasks)}\n"
+        if inbox_tasks:
+            text += f"• Inbox tasks: {len(inbox_tasks)}\n"
+        text += "\n_Нажми на задачу, чтобы отметить выполнение_"
     else:
         text += "Список пуст!\n\n"
-        text += "_Добавь задачи, которые хочешь выполнять регулярно и получать за них награды._"
+        text += "_Добавь задачи через /tasks или заполни inbox через /inbox_"
 
     await message.answer(
         text,
         parse_mode="Markdown",
-        reply_markup=get_tasks_main_menu(tasks, completions_today, stats_today)
+        reply_markup=get_tasks_main_menu(
+            tasks,
+            completions_today,
+            stats_today,
+            inbox_tasks=inbox_tasks,
+            filter_type="all"
+        )
     )
 
 
 @router.callback_query(F.data == "tasks_show")
 async def show_tasks(callback: CallbackQuery, state: FSMContext):
-    """Главное меню задач"""
+    """Главное меню задач (unified)"""
     await state.clear()
 
     user = get_user_by_telegram_id(callback.from_user.id)
@@ -90,28 +106,43 @@ async def show_tasks(callback: CallbackQuery, state: FSMContext):
         await callback.answer("Ошибка: пользователь не найден")
         return
 
-    tasks = get_user_tasks(user.id, active_only=True)
+    # Unified данные
+    unified = get_unified_tasks(user.id, filter_type="all")
+    tasks = unified["user_tasks"]
+    inbox_tasks = unified["inbox_tasks"]
+
     stats_today = get_user_stats_today(user.id)
 
-    # Подсчитать выполнения за сегодня
     completions_today = {}
     for task in tasks:
         count = get_task_completions_today(user.id, task.id)
         completions_today[task.id] = count
 
     text = "📋 *Мои задачи*\n\n"
-    if tasks:
-        text += f"Активных задач: {len(tasks)}\n\n"
-        text += "_Нажми на задачу, чтобы отметить выполнение_"
+    total_count = len(tasks) + len(inbox_tasks)
+
+    if total_count > 0:
+        text += f"Всего задач: {total_count}\n"
+        if tasks:
+            text += f"• User tasks: {len(tasks)}\n"
+        if inbox_tasks:
+            text += f"• Inbox tasks: {len(inbox_tasks)}\n"
+        text += "\n_Нажми на задачу, чтобы отметить выполнение_"
     else:
-        text += "Список пуст!\n\n"
-        text += "_Добавь задачи, которые хочешь выполнять регулярно и получать за них награды._"
+        text += "Список пуст!"
 
     await callback.message.edit_text(
         text,
         parse_mode="Markdown",
-        reply_markup=get_tasks_main_menu(tasks, completions_today, stats_today)
+        reply_markup=get_tasks_main_menu(
+            tasks,
+            completions_today,
+            stats_today,
+            inbox_tasks=inbox_tasks,
+            filter_type="all"
+        )
     )
+    await callback.answer()
 
 
 @router.callback_query(F.data == "tasks_empty")
@@ -130,6 +161,55 @@ async def tasks_stats_info(callback: CallbackQuery):
         "Статистика выполненных задач за сегодня",
         show_alert=False
     )
+
+
+@router.callback_query(F.data.startswith("tasks_filter:"))
+async def filter_tasks(callback: CallbackQuery):
+    """Фильтр задач: all / user_tasks / inbox"""
+    filter_type = callback.data.split(":")[1]
+
+    user = get_user_by_telegram_id(callback.from_user.id)
+    if not user:
+        await callback.answer("Ошибка")
+        return
+
+    # Получить unified данные с фильтром
+    unified = get_unified_tasks(user.id, filter_type=filter_type)
+    tasks = unified["user_tasks"]
+    inbox_tasks = unified["inbox_tasks"]
+
+    stats_today = get_user_stats_today(user.id)
+
+    completions_today = {}
+    for task in tasks:
+        count = get_task_completions_today(user.id, task.id)
+        completions_today[task.id] = count
+
+    text = "📋 *Мои задачи*\n\n"
+
+    if filter_type == "user_tasks":
+        text = "⭕ *User tasks*\n\n"
+    elif filter_type == "inbox":
+        text = "📥 *Inbox tasks*\n\n"
+
+    total_count = len(tasks) + len(inbox_tasks)
+    if total_count > 0:
+        text += f"Задач: {total_count}"
+    else:
+        text += "Задач нет"
+
+    await callback.message.edit_text(
+        text,
+        parse_mode="Markdown",
+        reply_markup=get_tasks_main_menu(
+            tasks,
+            completions_today,
+            stats_today,
+            inbox_tasks=inbox_tasks,
+            filter_type=filter_type
+        )
+    )
+    await callback.answer()
 
 
 # ============ ADD TASK ============

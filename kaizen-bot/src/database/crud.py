@@ -1,7 +1,7 @@
 from datetime import date, datetime, timedelta
 from sqlalchemy.orm import Session
 from src.database.models import (
-    User, DailyEntry, Goal, Report, InboxItem, SomedayMaybe, WeeklyReview, get_session
+    User, DailyEntry, Goal, Report, InboxItem, SomedayMaybe, WeeklyReview, UserTask, get_session
 )
 
 
@@ -919,5 +919,43 @@ def get_inbox_item_by_event_id(event_id: str) -> InboxItem | None:
         return session.query(InboxItem).filter(
             InboxItem.google_event_id == event_id
         ).first()
+    finally:
+        session.close()
+
+
+# ============ UNIFIED TASKS VIEW ============
+
+def get_unified_tasks(user_id: int, filter_type: str = "all") -> dict:
+    """
+    Получить объединённый список задач для unified view.
+
+    Args:
+        user_id: ID пользователя
+        filter_type: "all" | "user_tasks" | "inbox"
+
+    Returns: {
+        "user_tasks": list[UserTask],
+        "inbox_tasks": list[InboxItem]
+    }
+    """
+    session = get_session()
+    try:
+        result = {"user_tasks": [], "inbox_tasks": []}
+
+        # User tasks (active only)
+        if filter_type in ["all", "user_tasks"]:
+            result["user_tasks"] = session.query(UserTask).filter(
+                UserTask.user_id == user_id,
+                UserTask.is_active == True
+            ).all()
+
+        # Inbox tasks (pending only)
+        if filter_type in ["all", "inbox"]:
+            result["inbox_tasks"] = session.query(InboxItem).filter(
+                InboxItem.user_id == user_id,
+                InboxItem.status == "pending"
+            ).all()
+
+        return result
     finally:
         session.close()

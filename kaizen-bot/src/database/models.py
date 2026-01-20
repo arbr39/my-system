@@ -397,6 +397,7 @@ class UserTask(Base):
 
     # Категория (опционально)
     category = Column(String(50))  # sport, learning, personal, work, etc.
+    description = Column(Text)  # Опционально: ссылки, заметки
 
     # Статус
     is_active = Column(Boolean, default=True)  # False для архивных или удалённых

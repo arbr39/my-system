@@ -5,39 +5,62 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 
-def get_tasks_main_menu(tasks: list, completions_today: dict, stats_today: dict) -> InlineKeyboardMarkup:
+def get_tasks_main_menu(
+    tasks: list,
+    completions_today: dict,
+    stats_today: dict,
+    inbox_tasks: list = None,
+    filter_type: str = "all"
+) -> InlineKeyboardMarkup:
     """
-    Главное меню задач.
+    Главное меню задач с поддержкой inbox (unified view).
 
     Args:
         tasks: список UserTask
         completions_today: dict {task_id: count} - количество выполнений за сегодня
         stats_today: dict {"tasks_completed": int, "total_earned": int}
+        inbox_tasks: список InboxItem (опционально)
+        filter_type: "all" | "user_tasks" | "inbox"
     """
     builder = InlineKeyboardBuilder()
 
-    # Статистика за день
+    # Статистика за день (расширенная)
     if stats_today["tasks_completed"] > 0:
         builder.row(InlineKeyboardButton(
             text=f"📊 Сегодня: {stats_today['tasks_completed']} задач, +{stats_today['total_earned']}₽",
             callback_data="tasks_stats_info"
         ))
 
-    # Список задач
-    if tasks:
+    # Кнопки фильтра (если есть и tasks, и inbox)
+    if tasks and inbox_tasks and filter_type == "all":
+        builder.row(
+            InlineKeyboardButton(
+                text="📋 Все",
+                callback_data="tasks_filter:all"
+            ),
+            InlineKeyboardButton(
+                text="⭕ User tasks",
+                callback_data="tasks_filter:user_tasks"
+            ),
+            InlineKeyboardButton(
+                text="📥 Inbox",
+                callback_data="tasks_filter:inbox"
+            )
+        )
+
+    # User tasks (если фильтр разрешает)
+    if filter_type in ["all", "user_tasks"] and tasks:
         for task in tasks:
-            # Для повторяющихся задач показываем статус выполнения
             completed_count = completions_today.get(task.id, 0)
 
             if task.is_recurring:
                 if completed_count > 0:
-                    text = f"✅ {task.name} — {task.reward_amount}₽ (выполнено)"
+                    text = f"✅ {task.name} — {task.reward_amount}₽"
                     callback_data = f"task_view:{task.id}"
                 else:
                     text = f"⭕ {task.name} — {task.reward_amount}₽"
                     callback_data = f"task_complete:{task.id}"
             else:
-                # Одноразовая задача
                 text = f"🎯 {task.name} — {task.reward_amount}₽"
                 callback_data = f"task_complete:{task.id}"
 
@@ -45,7 +68,21 @@ def get_tasks_main_menu(tasks: list, completions_today: dict, stats_today: dict)
                 text=text,
                 callback_data=callback_data
             ))
-    else:
+
+    # Inbox tasks (если фильтр разрешает)
+    if filter_type in ["all", "inbox"] and inbox_tasks:
+        for item in inbox_tasks:
+            # Обрезать длинный текст
+            text_snippet = item.text[:40] + "..." if len(item.text) > 40 else item.text
+            text = f"📥 {text_snippet}"
+
+            builder.row(InlineKeyboardButton(
+                text=text,
+                callback_data=f"inbox_quick_done:{item.id}"
+            ))
+
+    # Пустое состояние
+    if not tasks and not inbox_tasks:
         builder.row(InlineKeyboardButton(
             text="📭 Задач пока нет",
             callback_data="tasks_empty"
