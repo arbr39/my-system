@@ -643,3 +643,7 @@ def get_today_earnings(user_id: int) -> int:
         return sum(t.amount for t in transactions)
     finally:
         session.close()
+
+
+# Alias для универсального использования
+grant_reward = add_reward
