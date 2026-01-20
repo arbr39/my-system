@@ -63,6 +63,138 @@ docker-compose down
 # Деплой автоматический через GitHub Actions (push в master)
 ```
 
+## Server Database Access
+
+### Database Location
+
+```bash
+# Production database path
+/root/my-system/kaizen-bot/data/kaizen.db
+```
+
+### Quick Queries (sqlite3 CLI)
+
+```bash
+# Connect to database
+ssh root@64.137.9.146 "sqlite3 /root/my-system/kaizen-bot/data/kaizen.db"
+
+# Basic stats
+ssh root@64.137.9.146 "sqlite3 /root/my-system/kaizen-bot/data/kaizen.db 'SELECT COUNT(*) FROM users'"
+
+# Reward fund balance
+ssh root@64.137.9.146 "sqlite3 /root/my-system/kaizen-bot/data/kaizen.db 'SELECT balance, total_earned, total_spent FROM reward_funds'"
+
+# Daily entries stats
+ssh root@64.137.9.146 "sqlite3 /root/my-system/kaizen-bot/data/kaizen.db '
+SELECT
+  COUNT(*) as total,
+  SUM(CASE WHEN morning_completed = 1 THEN 1 ELSE 0 END) as morning,
+  SUM(CASE WHEN evening_completed = 1 THEN 1 ELSE 0 END) as evening
+FROM daily_entries'"
+
+# Recent entries (last 7 days)
+ssh root@64.137.9.146 "sqlite3 /root/my-system/kaizen-bot/data/kaizen.db '
+SELECT entry_date, morning_completed, evening_completed, task_1, task_1_done
+FROM daily_entries
+ORDER BY entry_date DESC
+LIMIT 7'"
+
+# Recent reward transactions
+ssh root@64.137.9.146 "sqlite3 /root/my-system/kaizen-bot/data/kaizen.db '
+SELECT transaction_type, amount, description, datetime(created_at)
+FROM reward_transactions
+ORDER BY created_at DESC
+LIMIT 10'"
+
+# User tasks with completions
+ssh root@64.137.9.146 "sqlite3 /root/my-system/kaizen-bot/data/kaizen.db '
+SELECT
+  ut.name,
+  ut.reward_amount,
+  ut.is_active,
+  COUNT(utc.id) as completions
+FROM user_tasks ut
+LEFT JOIN user_task_completions utc ON ut.id = utc.task_id
+GROUP BY ut.id'"
+
+# Inbox status breakdown
+ssh root@64.137.9.146 "sqlite3 /root/my-system/kaizen-bot/data/kaizen.db '
+SELECT status, COUNT(*)
+FROM inbox_items
+GROUP BY status'"
+```
+
+### Advanced: Formatted Output (Python for complex formatting)
+
+```bash
+# Comprehensive stats with JSON output
+ssh root@64.137.9.146 "cd /root/my-system/kaizen-bot && python3 -c \"
+import sqlite3
+import json
+
+conn = sqlite3.connect('data/kaizen.db')
+cursor = conn.cursor()
+
+stats = {}
+
+# Users
+cursor.execute('SELECT COUNT(*) FROM users')
+stats['users'] = cursor.fetchone()[0]
+
+# Daily entries
+cursor.execute('''
+    SELECT
+        COUNT(*) as total,
+        SUM(CASE WHEN morning_completed = 1 THEN 1 ELSE 0 END) as morning,
+        SUM(CASE WHEN evening_completed = 1 THEN 1 ELSE 0 END) as evening
+    FROM daily_entries
+''')
+row = cursor.fetchone()
+stats['daily_entries'] = {'total': row[0], 'morning': row[1], 'evening': row[2]}
+
+# Reward fund
+cursor.execute('SELECT balance, total_earned, total_spent FROM reward_funds')
+row = cursor.fetchone()
+if row:
+    stats['reward_fund'] = {'balance': row[0], 'earned': row[1], 'spent': row[2]}
+
+print(json.dumps(stats, indent=2))
+conn.close()
+\""
+
+# Daily entries with formatted tasks display
+ssh root@64.137.9.146 "cd /root/my-system/kaizen-bot && python3 -c \"
+import sqlite3
+conn = sqlite3.connect('data/kaizen.db')
+cursor = conn.cursor()
+
+cursor.execute('''
+    SELECT
+        entry_date,
+        morning_completed,
+        evening_completed,
+        task_1, task_1_done,
+        task_2, task_2_done,
+        task_3, task_3_done,
+        priority_task
+    FROM daily_entries
+    ORDER BY entry_date DESC
+    LIMIT 7
+''')
+
+for row in cursor.fetchall():
+    date, m, e, t1, t1d, t2, t2d, t3, t3d, priority = row
+    morning = '✅' if m else '❌'
+    evening = '✅' if e else '❌'
+    print(f'{date}: M{morning} E{evening}')
+    if t1: print(f'  1. {t1} {'✅' if t1d else '❌'} {'★' if priority == 1 else ''}')
+    if t2: print(f'  2. {t2} {'✅' if t2d else '❌'} {'★' if priority == 2 else ''}')
+    if t3: print(f'  3. {t3} {'✅' if t3d else '❌'} {'★' if priority == 3 else ''}')
+
+conn.close()
+\""
+```
+
 ## Development Patterns
 
 ### Handlers
