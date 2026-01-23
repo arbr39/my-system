@@ -280,9 +280,17 @@ def update_report_status(report_id: int, status: str) -> Report:
 
 
 # Работа с настройками пользователя
-def update_user_settings(telegram_id: int, morning_hour: int = None, morning_minute: int = None,
-                         evening_hour: int = None, evening_minute: int = None,
-                         timezone: str = None) -> User:
+def update_user_settings(
+    telegram_id: int,
+    morning_hour: int = None,
+    morning_minute: int = None,
+    evening_hour: int = None,
+    evening_minute: int = None,
+    timezone: str = None,
+    task_reminders_enabled: bool = None,
+    task_reminder_hour: int = None,
+    task_reminder_minute: int = None
+) -> User:
     """Обновить настройки пользователя"""
     session = get_session()
     try:
@@ -298,6 +306,12 @@ def update_user_settings(telegram_id: int, morning_hour: int = None, morning_min
                 user.evening_minute = evening_minute
             if timezone is not None:
                 user.timezone = timezone
+            if task_reminders_enabled is not None:
+                user.task_reminders_enabled = task_reminders_enabled
+            if task_reminder_hour is not None:
+                user.task_reminder_hour = task_reminder_hour
+            if task_reminder_minute is not None:
+                user.task_reminder_minute = task_reminder_minute
             session.commit()
             session.refresh(user)
         return user

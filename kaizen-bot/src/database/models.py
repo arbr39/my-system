@@ -33,6 +33,11 @@ class User(Base):
     quiet_hours_end = Column(Integer, default=7)  # Конец тихих часов (0-23)
     event_reminders_enabled = Column(Boolean, default=True)  # Напоминания о событиях включены
 
+    # Настройки напоминаний о задачах дня
+    task_reminders_enabled = Column(Boolean, default=True)
+    task_reminder_hour = Column(Integer, default=14)
+    task_reminder_minute = Column(Integer, default=0)
+
     # Отношения
     daily_entries = relationship("DailyEntry", back_populates="user")
     goals = relationship("Goal", back_populates="user")

@@ -8,7 +8,7 @@ from src.database.models import init_db
 from src.handlers import start, morning, evening, stats, goals, settings, report, habits
 from src.handlers import review, someday, inbox, calendar, rewards
 from src.handlers import principles, dates, user_tasks, quizlet
-from src.handlers import calendar_reminders, habits_calendar, calendar_actions
+from src.handlers import calendar_reminders, habits_calendar, calendar_actions, task_reminders
 from src.scheduler.jobs import set_bot, setup_scheduler, start_scheduler
 
 # Настройка логирования
@@ -54,6 +54,7 @@ async def main():
 
     # Calendar расширения
     dp.include_router(calendar_reminders.router)  # Умные напоминания и follow-up
+    dp.include_router(task_reminders.router)  # Напоминания о задачах дня
     dp.include_router(habits_calendar.router)  # Привычки в календаре
     dp.include_router(calendar_actions.router)  # Quick action "В календарь"
 

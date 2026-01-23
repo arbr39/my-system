@@ -213,6 +213,93 @@ async def send_quizlet_reminder():
             print(f"Quizlet reminder error: {e}")
 
 
+async def send_task_reminder():
+    """
+    Напоминание о задачах дня (проверяется каждые 10 минут).
+    Отправляет список незавершённых задач с интерактивными кнопками.
+    """
+    if not bot:
+        return
+
+    from datetime import datetime
+    from src.scheduler.calendar_reminders import _is_in_quiet_hours
+
+    users = get_all_users()
+    current_time = datetime.now()
+
+    for user in users:
+        try:
+            # Проверка: напоминания включены
+            if not user.task_reminders_enabled:
+                continue
+
+            # Проверка: правильное время (±5 минут от настроенного)
+            reminder_hour = user.task_reminder_hour or 14
+            reminder_minute = user.task_reminder_minute or 0
+
+            if not (current_time.hour == reminder_hour and
+                    abs(current_time.minute - reminder_minute) <= 5):
+                continue
+
+            # Проверка: тихие часы
+            if _is_in_quiet_hours(user):
+                continue
+
+            # Получить запись на сегодня
+            entry = get_today_entry(user.id)
+
+            # Пропустить если утро не заполнено
+            if not entry or not entry.morning_completed:
+                continue
+
+            # Пропустить если вечер уже завершён
+            if entry.evening_completed:
+                continue
+
+            # Собрать задачи
+            tasks = [
+                (1, entry.task_1, entry.task_1_done),
+                (2, entry.task_2, entry.task_2_done),
+                (3, entry.task_3, entry.task_3_done)
+            ]
+
+            # Проверить наличие незавершённых задач
+            incomplete_tasks = [t for t in tasks if t[1] and not t[2]]
+
+            if not incomplete_tasks:
+                # Все задачи выполнены — пропускаем
+                continue
+
+            # Формируем сообщение
+            from src.keyboards.inline_tasks import get_daily_task_reminder_keyboard
+
+            message_text = "📝 *Задачи на сегодня*\n\n"
+
+            for num, text, done in tasks:
+                if not text:
+                    continue
+
+                check = "✅" if done else "⬜"
+                priority_star = "⭐ " if entry.priority_task == num else ""
+
+                message_text += f"{check} {priority_star}{text}\n"
+
+            completed_count = sum(1 for _, _, done in tasks if done)
+            total_count = sum(1 for _, text, _ in tasks if text)
+
+            message_text += f"\nВыполнено: {completed_count} из {total_count}"
+
+            await bot.send_message(
+                user.telegram_id,
+                message_text,
+                parse_mode="Markdown",
+                reply_markup=get_daily_task_reminder_keyboard(entry.id, tasks)
+            )
+
+        except Exception as e:
+            print(f"Error sending task reminder to user {user.telegram_id}: {e}")
+
+
 def setup_scheduler():
     """Настройка планировщика"""
     # Утреннее напоминание
@@ -279,6 +366,14 @@ def setup_scheduler():
         replace_existing=True
     )
 
+    # Напоминание о задачах дня (каждые 10 минут)
+    scheduler.add_job(
+        send_task_reminder,
+        CronTrigger(minute="*/10", timezone=TIMEZONE),
+        id="task_reminder",
+        replace_existing=True
+    )
+
     # === Умные напоминания о событиях календаря ===
 
     # Напоминания о предстоящих событиях (каждые 5 минут)
@@ -332,6 +427,7 @@ def start_scheduler():
         print("Birthday reminders: daily 09:00")
         print("Monthly assessment: 1st day of month 10:00")
         print("Quizlet reminder: daily 21:30")
+        print("Task reminders: every 10 minutes (user time configurable)")
         print("Calendar event reminders: every 5 minutes")
         print("Calendar event followups: every 5 minutes")
         print("Habit calendar sync: daily 22:30")
