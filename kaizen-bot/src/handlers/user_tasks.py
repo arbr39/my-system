@@ -11,6 +11,8 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
 from src.database.crud import get_user_by_telegram_id, get_unified_tasks
+from src.database.crud_rewards import add_reward, get_reward_balance
+from src.database.models import get_session, DailyEntry
 from src.database.crud_user_tasks import (
     add_user_task,
     get_user_tasks,
@@ -32,6 +34,26 @@ from src.keyboards.inline_user_tasks import (
     get_task_history_keyboard
 )
 from src.keyboards.inline import get_main_menu
+
+
+def _get_tasks_keyboard_data(user_id: int):
+    """
+    Вспомогательная функция для получения данных для клавиатуры задач.
+    Возвращает tuple: (tasks, completions_today, stats_today, inbox_tasks, daily_entry)
+    """
+    unified = get_unified_tasks(user_id, filter_type="all")
+    tasks = unified["user_tasks"]
+    inbox_tasks = unified["inbox_tasks"]
+    daily_entry = unified["daily_entry"]
+
+    stats_today = get_user_stats_today(user_id)
+
+    completions_today = {}
+    for task in tasks:
+        count = get_task_completions_today(user_id, task.id)
+        completions_today[task.id] = count
+
+    return tasks, completions_today, stats_today, inbox_tasks, daily_entry
 
 router = Router()
 
@@ -60,6 +82,7 @@ async def cmd_tasks(message: Message):
     unified = get_unified_tasks(user.id, filter_type="all")
     tasks = unified["user_tasks"]
     inbox_tasks = unified["inbox_tasks"]
+    daily_entry = unified["daily_entry"]
 
     stats_today = get_user_stats_today(user.id)
 
@@ -70,18 +93,30 @@ async def cmd_tasks(message: Message):
         completions_today[task.id] = count
 
     text = "📋 *Мои задачи*\n\n"
-    total_count = len(tasks) + len(inbox_tasks)
+
+    # Подсчитать задачи дня
+    daily_count = 0
+    daily_done = 0
+    if daily_entry:
+        for i in range(1, 4):
+            if getattr(daily_entry, f"task_{i}"):
+                daily_count += 1
+                if getattr(daily_entry, f"task_{i}_done"):
+                    daily_done += 1
+
+    total_count = len(tasks) + len(inbox_tasks) + daily_count
 
     if total_count > 0:
-        text += f"Всего задач: {total_count}\n"
+        if daily_count > 0:
+            text += f"📅 Задачи дня: {daily_done}/{daily_count}\n"
         if tasks:
-            text += f"• User tasks: {len(tasks)}\n"
+            text += f"⭕ Мои задачи: {len(tasks)}\n"
         if inbox_tasks:
-            text += f"• Inbox tasks: {len(inbox_tasks)}\n"
+            text += f"📥 Inbox: {len(inbox_tasks)}\n"
         text += "\n_Нажми на задачу, чтобы отметить выполнение_"
     else:
         text += "Список пуст!\n\n"
-        text += "_Добавь задачи через /tasks или заполни inbox через /inbox_"
+        text += "_Заполни утренний кайдзен или добавь задачи_"
 
     await message.answer(
         text,
@@ -91,6 +126,7 @@ async def cmd_tasks(message: Message):
             completions_today,
             stats_today,
             inbox_tasks=inbox_tasks,
+            daily_entry=daily_entry,
             filter_type="all"
         )
     )
@@ -110,6 +146,7 @@ async def show_tasks(callback: CallbackQuery, state: FSMContext):
     unified = get_unified_tasks(user.id, filter_type="all")
     tasks = unified["user_tasks"]
     inbox_tasks = unified["inbox_tasks"]
+    daily_entry = unified["daily_entry"]
 
     stats_today = get_user_stats_today(user.id)
 
@@ -119,14 +156,26 @@ async def show_tasks(callback: CallbackQuery, state: FSMContext):
         completions_today[task.id] = count
 
     text = "📋 *Мои задачи*\n\n"
-    total_count = len(tasks) + len(inbox_tasks)
+
+    # Подсчитать задачи дня
+    daily_count = 0
+    daily_done = 0
+    if daily_entry:
+        for i in range(1, 4):
+            if getattr(daily_entry, f"task_{i}"):
+                daily_count += 1
+                if getattr(daily_entry, f"task_{i}_done"):
+                    daily_done += 1
+
+    total_count = len(tasks) + len(inbox_tasks) + daily_count
 
     if total_count > 0:
-        text += f"Всего задач: {total_count}\n"
+        if daily_count > 0:
+            text += f"📅 Задачи дня: {daily_done}/{daily_count}\n"
         if tasks:
-            text += f"• User tasks: {len(tasks)}\n"
+            text += f"⭕ Мои задачи: {len(tasks)}\n"
         if inbox_tasks:
-            text += f"• Inbox tasks: {len(inbox_tasks)}\n"
+            text += f"📥 Inbox: {len(inbox_tasks)}\n"
         text += "\n_Нажми на задачу, чтобы отметить выполнение_"
     else:
         text += "Список пуст!"
@@ -139,6 +188,7 @@ async def show_tasks(callback: CallbackQuery, state: FSMContext):
             completions_today,
             stats_today,
             inbox_tasks=inbox_tasks,
+            daily_entry=daily_entry,
             filter_type="all"
         )
     )
@@ -165,7 +215,7 @@ async def tasks_stats_info(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("tasks_filter:"))
 async def filter_tasks(callback: CallbackQuery):
-    """Фильтр задач: all / user_tasks / inbox"""
+    """Фильтр задач: all / user_tasks / inbox / daily"""
     filter_type = callback.data.split(":")[1]
 
     user = get_user_by_telegram_id(callback.from_user.id)
@@ -177,6 +227,7 @@ async def filter_tasks(callback: CallbackQuery):
     unified = get_unified_tasks(user.id, filter_type=filter_type)
     tasks = unified["user_tasks"]
     inbox_tasks = unified["inbox_tasks"]
+    daily_entry = unified["daily_entry"]
 
     stats_today = get_user_stats_today(user.id)
 
@@ -187,12 +238,21 @@ async def filter_tasks(callback: CallbackQuery):
 
     text = "📋 *Мои задачи*\n\n"
 
-    if filter_type == "user_tasks":
-        text = "⭕ *User tasks*\n\n"
+    if filter_type == "daily":
+        text = "📅 *Задачи дня*\n\n"
+    elif filter_type == "user_tasks":
+        text = "⭕ *Мои задачи*\n\n"
     elif filter_type == "inbox":
-        text = "📥 *Inbox tasks*\n\n"
+        text = "📥 *Inbox*\n\n"
 
-    total_count = len(tasks) + len(inbox_tasks)
+    # Подсчёт задач
+    daily_count = 0
+    if daily_entry:
+        for i in range(1, 4):
+            if getattr(daily_entry, f"task_{i}"):
+                daily_count += 1
+
+    total_count = len(tasks) + len(inbox_tasks) + daily_count
     if total_count > 0:
         text += f"Задач: {total_count}"
     else:
@@ -206,6 +266,7 @@ async def filter_tasks(callback: CallbackQuery):
             completions_today,
             stats_today,
             inbox_tasks=inbox_tasks,
+            daily_entry=daily_entry,
             filter_type=filter_type
         )
     )
@@ -345,17 +406,15 @@ async def save_task(message, state: FSMContext, telegram_id: int, category: str 
 
     text += "\n_Теперь выполняй задачу и зарабатывай награды!_"
 
-    tasks = get_user_tasks(user.id, active_only=True)
-    stats_today = get_user_stats_today(user.id)
-    completions_today = {}
-    for t in tasks:
-        count = get_task_completions_today(user.id, t.id)
-        completions_today[t.id] = count
+    tasks, completions_today, stats_today, inbox_tasks, daily_entry = _get_tasks_keyboard_data(user.id)
 
     await message.edit_text(
         text,
         parse_mode="Markdown",
-        reply_markup=get_tasks_main_menu(tasks, completions_today, stats_today)
+        reply_markup=get_tasks_main_menu(
+            tasks, completions_today, stats_today,
+            inbox_tasks=inbox_tasks, daily_entry=daily_entry
+        )
     )
 
 
@@ -387,17 +446,15 @@ async def complete_task(callback: CallbackQuery):
         text = f"ℹ️ {result['message']}"
 
     # Обновляем список задач
-    tasks = get_user_tasks(user.id, active_only=True)
-    stats_today = get_user_stats_today(user.id)
-    completions_today = {}
-    for t in tasks:
-        count = get_task_completions_today(user.id, t.id)
-        completions_today[t.id] = count
+    tasks, completions_today, stats_today, inbox_tasks, daily_entry = _get_tasks_keyboard_data(user.id)
 
     await callback.message.edit_text(
         text,
         parse_mode="Markdown",
-        reply_markup=get_tasks_main_menu(tasks, completions_today, stats_today)
+        reply_markup=get_tasks_main_menu(
+            tasks, completions_today, stats_today,
+            inbox_tasks=inbox_tasks, daily_entry=daily_entry
+        )
     )
 
 
@@ -571,19 +628,17 @@ async def process_edit_reward(message: Message, state: FSMContext):
     await state.clear()
 
     user = get_user_by_telegram_id(message.from_user.id)
-    tasks = get_user_tasks(user.id, active_only=True)
-    stats_today = get_user_stats_today(user.id)
-    completions_today = {}
-    for t in tasks:
-        count = get_task_completions_today(user.id, t.id)
-        completions_today[t.id] = count
+    tasks, completions_today, stats_today, inbox_tasks, daily_entry = _get_tasks_keyboard_data(user.id)
 
     await message.answer(
         f"✅ *Задача обновлена!*\n\n"
         f"📝 {data['new_name']}\n"
         f"💰 {new_reward}₽",
         parse_mode="Markdown",
-        reply_markup=get_tasks_main_menu(tasks, completions_today, stats_today)
+        reply_markup=get_tasks_main_menu(
+            tasks, completions_today, stats_today,
+            inbox_tasks=inbox_tasks, daily_entry=daily_entry
+        )
     )
 
 
@@ -622,18 +677,16 @@ async def execute_delete_task(callback: CallbackQuery):
         await callback.answer("❌ Ошибка удаления")
 
     user = get_user_by_telegram_id(callback.from_user.id)
-    tasks = get_user_tasks(user.id, active_only=True)
-    stats_today = get_user_stats_today(user.id)
-    completions_today = {}
-    for t in tasks:
-        count = get_task_completions_today(user.id, t.id)
-        completions_today[t.id] = count
+    tasks, completions_today, stats_today, inbox_tasks, daily_entry = _get_tasks_keyboard_data(user.id)
 
     await callback.message.edit_text(
         "📋 *Мои задачи*\n\n"
         "_Задача удалена_",
         parse_mode="Markdown",
-        reply_markup=get_tasks_main_menu(tasks, completions_today, stats_today)
+        reply_markup=get_tasks_main_menu(
+            tasks, completions_today, stats_today,
+            inbox_tasks=inbox_tasks, daily_entry=daily_entry
+        )
     )
 
 
@@ -655,9 +708,118 @@ async def cancel_action(callback: CallbackQuery, state: FSMContext):
         count = get_task_completions_today(user.id, t.id)
         completions_today[t.id] = count
 
+    tasks, completions_today, stats_today, inbox_tasks, daily_entry = _get_tasks_keyboard_data(user.id)
+
     await callback.message.edit_text(
         "📋 *Мои задачи*\n\n"
         "_Действие отменено_",
         parse_mode="Markdown",
-        reply_markup=get_tasks_main_menu(tasks, completions_today, stats_today)
+        reply_markup=get_tasks_main_menu(
+            tasks, completions_today, stats_today,
+            inbox_tasks=inbox_tasks, daily_entry=daily_entry
+        )
+    )
+
+
+# ============ DAILY TASKS (из утреннего кайдзена) ============
+
+@router.callback_query(F.data.startswith("daily_task_complete:"))
+async def complete_daily_task(callback: CallbackQuery):
+    """
+    Отметить задачу дня как выполненную.
+    Callback format: daily_task_complete:{entry_id}:{task_num}
+    """
+    try:
+        _, entry_id, task_num = callback.data.split(":")
+        entry_id = int(entry_id)
+        task_num = int(task_num)
+    except (ValueError, IndexError):
+        await callback.answer("Ошибка данных")
+        return
+
+    user = get_user_by_telegram_id(callback.from_user.id)
+    if not user:
+        await callback.answer("Пользователь не найден")
+        return
+
+    session = get_session()
+    try:
+        entry = session.query(DailyEntry).filter(
+            DailyEntry.id == entry_id,
+            DailyEntry.user_id == user.id
+        ).first()
+
+        if not entry:
+            await callback.answer("Запись не найдена")
+            return
+
+        # Проверить, не выполнена ли уже
+        task_done_field = f"task_{task_num}_done"
+        if getattr(entry, task_done_field):
+            await callback.answer("Задача уже выполнена!", show_alert=True)
+            return
+
+        # Отметить как выполненную
+        setattr(entry, task_done_field, True)
+        session.commit()
+
+        # Начислить награду
+        task_text = getattr(entry, f"task_{task_num}")
+        base_reward = 20
+
+        # Проверить приоритетность
+        is_priority = (entry.priority_task == task_num)
+        priority_bonus = 50 if is_priority else 0
+        total_reward = base_reward + priority_bonus
+
+        add_reward(
+            user_id=user.id,
+            amount=total_reward,
+            transaction_type="daily_task_done",
+            description=f"Задача дня: {task_text[:50]}",
+            daily_entry_id=entry.id
+        )
+
+        balance = get_reward_balance(user.id)
+
+    except Exception as e:
+        print(f"Error completing daily task: {e}")
+        await callback.answer("Произошла ошибка")
+        return
+    finally:
+        session.close()
+
+    # Формируем сообщение
+    priority_msg = "\n⭐ Главная задача дня! +50₽ бонус" if is_priority else ""
+
+    # Получаем обновлённые данные для клавиатуры
+    tasks, completions_today, stats_today, inbox_tasks, daily_entry = _get_tasks_keyboard_data(user.id)
+
+    text = (
+        f"🎉 *Отлично!*\n\n"
+        f"✅ {task_text}\n\n"
+        f"💰 +{total_reward}₽ за выполнение!{priority_msg}\n"
+        f"📊 Баланс: {balance}₽"
+    )
+
+    await callback.message.edit_text(
+        text,
+        parse_mode="Markdown",
+        reply_markup=get_tasks_main_menu(
+            tasks, completions_today, stats_today,
+            inbox_tasks=inbox_tasks, daily_entry=daily_entry
+        )
+    )
+    await callback.answer("Награда начислена!")
+
+
+@router.callback_query(F.data.startswith("daily_task_info:"))
+async def daily_task_info(callback: CallbackQuery):
+    """
+    Информация о выполненной задаче дня.
+    Callback format: daily_task_info:{entry_id}:{task_num}
+    """
+    await callback.answer(
+        "✅ Задача уже выполнена сегодня!",
+        show_alert=True
     )

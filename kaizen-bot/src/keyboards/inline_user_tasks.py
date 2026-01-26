@@ -10,17 +10,19 @@ def get_tasks_main_menu(
     completions_today: dict,
     stats_today: dict,
     inbox_tasks: list = None,
+    daily_entry = None,
     filter_type: str = "all"
 ) -> InlineKeyboardMarkup:
     """
-    Главное меню задач с поддержкой inbox (unified view).
+    Главное меню задач с поддержкой inbox и daily tasks (unified view).
 
     Args:
         tasks: список UserTask
         completions_today: dict {task_id: count} - количество выполнений за сегодня
         stats_today: dict {"tasks_completed": int, "total_earned": int}
         inbox_tasks: список InboxItem (опционально)
-        filter_type: "all" | "user_tasks" | "inbox"
+        daily_entry: DailyEntry за сегодня (опционально)
+        filter_type: "all" | "user_tasks" | "inbox" | "daily"
     """
     builder = InlineKeyboardBuilder()
 
@@ -31,22 +33,61 @@ def get_tasks_main_menu(
             callback_data="tasks_stats_info"
         ))
 
-    # Кнопки фильтра (если есть и tasks, и inbox)
-    if tasks and inbox_tasks and filter_type == "all":
-        builder.row(
-            InlineKeyboardButton(
-                text="📋 Все",
-                callback_data="tasks_filter:all"
-            ),
-            InlineKeyboardButton(
-                text="⭕ User tasks",
+    # Задачи дня из утреннего кайдзена (показываем первыми!)
+    if filter_type in ["all", "daily"] and daily_entry:
+        daily_tasks = [
+            (1, daily_entry.task_1, daily_entry.task_1_done),
+            (2, daily_entry.task_2, daily_entry.task_2_done),
+            (3, daily_entry.task_3, daily_entry.task_3_done)
+        ]
+
+        for task_num, task_text, task_done in daily_tasks:
+            if not task_text:
+                continue
+
+            is_priority = (daily_entry.priority_task == task_num)
+            priority_marker = "⭐" if is_priority else ""
+
+            # Обрезать длинный текст
+            text_snippet = task_text[:35] + "..." if len(task_text) > 35 else task_text
+
+            if task_done:
+                text = f"✅ {text_snippet} {priority_marker}"
+                callback_data = f"daily_task_info:{daily_entry.id}:{task_num}"
+            else:
+                reward = 70 if is_priority else 20
+                text = f"📅 {text_snippet} — {reward}₽ {priority_marker}"
+                callback_data = f"daily_task_complete:{daily_entry.id}:{task_num}"
+
+            builder.row(InlineKeyboardButton(
+                text=text,
+                callback_data=callback_data
+            ))
+
+    # Кнопки фильтра (если есть разные типы задач)
+    has_multiple_types = sum([bool(tasks), bool(inbox_tasks), bool(daily_entry)]) > 1
+    if has_multiple_types and filter_type == "all":
+        filter_buttons = []
+        filter_buttons.append(InlineKeyboardButton(
+            text="📋 Все",
+            callback_data="tasks_filter:all"
+        ))
+        if daily_entry:
+            filter_buttons.append(InlineKeyboardButton(
+                text="📅 День",
+                callback_data="tasks_filter:daily"
+            ))
+        if tasks:
+            filter_buttons.append(InlineKeyboardButton(
+                text="⭕ Мои",
                 callback_data="tasks_filter:user_tasks"
-            ),
-            InlineKeyboardButton(
+            ))
+        if inbox_tasks:
+            filter_buttons.append(InlineKeyboardButton(
                 text="📥 Inbox",
                 callback_data="tasks_filter:inbox"
-            )
-        )
+            ))
+        builder.row(*filter_buttons[:4])  # Макс 4 кнопки в ряд
 
     # User tasks (если фильтр разрешает)
     if filter_type in ["all", "user_tasks"] and tasks:
@@ -82,7 +123,7 @@ def get_tasks_main_menu(
             ))
 
     # Пустое состояние
-    if not tasks and not inbox_tasks:
+    if not tasks and not inbox_tasks and not daily_entry:
         builder.row(InlineKeyboardButton(
             text="📭 Задач пока нет",
             callback_data="tasks_empty"

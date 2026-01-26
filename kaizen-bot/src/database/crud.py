@@ -945,16 +945,26 @@ def get_unified_tasks(user_id: int, filter_type: str = "all") -> dict:
 
     Args:
         user_id: ID пользователя
-        filter_type: "all" | "user_tasks" | "inbox"
+        filter_type: "all" | "user_tasks" | "inbox" | "daily"
 
     Returns: {
         "user_tasks": list[UserTask],
-        "inbox_tasks": list[InboxItem]
+        "inbox_tasks": list[InboxItem],
+        "daily_entry": DailyEntry | None
     }
     """
+    from datetime import date
     session = get_session()
     try:
-        result = {"user_tasks": [], "inbox_tasks": []}
+        result = {"user_tasks": [], "inbox_tasks": [], "daily_entry": None}
+
+        # Daily entry за сегодня (всегда получаем для unified view)
+        if filter_type in ["all", "daily"]:
+            result["daily_entry"] = session.query(DailyEntry).filter(
+                DailyEntry.user_id == user_id,
+                DailyEntry.entry_date == date.today(),
+                DailyEntry.morning_completed == True
+            ).first()
 
         # User tasks (active only)
         if filter_type in ["all", "user_tasks"]:
